@@ -47,8 +47,8 @@ def one_step(x, q, Tc, Caf, dt):
 # ==============================================================================
 # 2. Modbus 관련 설정 (수정된 매핑)
 # ==============================================================================
-# 레지스터 매핑 (INT16 사용) - Size 8 제한에 맞춰 수정:
-# Holding Registers (40001+):
+# 레지스터 매핑 (INT16 사용):
+# Holding Registers (40001+) & Input Registers (30001+):
 # 0: T (온도) x100 [K*100] - Read Only
 # 1: Ca (농도) x1000 [mol/m³*1000] - Read Only
 # 2: q (유량) x100 [L/s*100] - Read/Write
@@ -66,7 +66,7 @@ slave_id = 1  # OpenPLC가 사용하는 slave ID
 
 
 # ==============================================================================
-# 3. 시뮬레이션 루프 (Modbus 통합) - 수정된 레지스터 주소
+# 3. 시뮬레이션 루프 (Modbus 통합) - Input Registers 추가
 # ==============================================================================
 def simulation_loop():
     global context
@@ -89,11 +89,11 @@ def simulation_loop():
             now = time.perf_counter() - t0
             
             try:
-                # Modbus에서 설정값 읽기 (PLC가 쓴 INT 값) - 수정된 주소
+                # Modbus에서 설정값 읽기 (PLC가 쓴 INT 값)
                 store = context[slave_id]
-                q_set_int = store.getValues(3, 2, count=1)[0]      # Register 2
-                caf_set_int = store.getValues(3, 3, count=1)[0]    # Register 3  
-                tc_set_int = store.getValues(3, 4, count=1)[0]     # Register 4
+                q_set_int = store.getValues(3, 2, count=1)[0]      # Holding Register 2
+                caf_set_int = store.getValues(3, 3, count=1)[0]    # Holding Register 3  
+                tc_set_int = store.getValues(3, 4, count=1)[0]     # Holding Register 4
                 
                 # INT를 실제 값으로 변환 (스케일링)
                 q_set = q_set_int / 100.0        # 10000 → 100.0 L/s
@@ -120,26 +120,27 @@ def simulation_loop():
             noise = np.random.randn() * TEMP_NOISE_STD
             T_measured = T_true + noise
             
-            # Modbus 레지스터에 결과값 쓰기 (실제 값을 INT로 변환) - 수정된 주소
+            # Modbus 레지스터에 결과값 쓰기 (실제 값을 INT로 변환)
             try:
                 store = context[slave_id]
+                
                 # T (온도) - Register 0 (INT로 스케일링)
                 T_int = int(T_measured * 100)    # 310.5 K → 31050
-                store.setValues(3, 0, [T_int])
+                Ca_int = int(Ca_true * 1000)     # 0.9 mol/m³ → 900
                 
-                # Ca (농도) - Register 1 (INT로 스케일링)
-                Ca_int = int(Ca_true * 1000)    # 0.9 mol/m³ → 900
-                store.setValues(3, 1, [Ca_int])
+                # 🔥 핵심 수정: Holding Registers AND Input Registers 둘 다에 쓰기!
+                # Holding Registers (Function Code 3)
+                store.setValues(3, 0, [T_int])   # T (온도)
+                store.setValues(3, 1, [Ca_int])  # Ca (농도)
                 
-                # ⚠️ 중요: 설정값 덮어쓰기 제거! PLC가 이 값들을 관리함
-                # 기존에 있던 이 코드들을 삭제:
-                # store.setValues(3, 2, [int(q_set * 100)])     # 삭제됨!
-                # store.setValues(3, 3, [int(caf_set * 1000)])  # 삭제됨!
-                # store.setValues(3, 4, [int(tc_set * 100)])    # 삭제됨!
+                # Input Registers (Function Code 4) - 추가!
+                store.setValues(4, 0, [T_int])   # T (온도) - Input Register에도!
+                store.setValues(4, 1, [Ca_int])  # Ca (농도) - Input Register에도!
                 
                 # 🔍 디버깅 로그 추가
                 if now % 5.0 < dt_sim:  # 5초마다 한번씩만 로그
-                    logger.info(f"측정값 업데이트 - T:{T_measured:.1f}K, Ca:{Ca_true:.3f}mol/m³")
+                    logger.info(f"측정값 업데이트 - T:{T_measured:.1f}K({T_int}), Ca:{Ca_true:.3f}mol/m³({Ca_int})")
+                    logger.info(f"Holding & Input Registers 모두 업데이트 완료")
                 
             except Exception as e:
                 logger.error(f"Error writing to Modbus: {e}")
@@ -156,34 +157,42 @@ def simulation_loop():
 
 
 # ==============================================================================
-# 4. Modbus 서버 초기화 - 수정된 초기값 주소
+# 4. Modbus 서버 초기화 - Input Registers 추가
 # ==============================================================================
 def init_modbus_server():
     global context
     
-    # 데이터 스토어 초기화 - 여유있게 200개 레지스터
+    # 데이터 스토어 초기화 - Input Registers도 추가
     store = ModbusSlaveContext(
         di=ModbusSequentialDataBlock(0, [0]*100),    # Discrete Inputs
         co=ModbusSequentialDataBlock(0, [0]*100),    # Coils
-        hr=ModbusSequentialDataBlock(0, [0]*200),    # Holding registers (많이 확보)
-        ir=ModbusSequentialDataBlock(0, [0]*100)     # Input registers
+        hr=ModbusSequentialDataBlock(0, [0]*200),    # Holding registers
+        ir=ModbusSequentialDataBlock(0, [0]*200)     # Input registers (추가!)
     )
     
     # 서버 컨텍스트 생성 - slave id 1로 설정
     context = ModbusServerContext(slaves={1: store}, single=False)
     
-    # 초기값 설정 (INT로 스케일링된 값) - 수정된 주소
+    # 초기값 설정 (INT로 스케일링된 값)
+    # Holding Registers 초기값
     store.setValues(3, 0, [31000])   # T 초기값: 310.0 * 100
     store.setValues(3, 1, [900])     # Ca 초기값: 0.9 * 1000  
     store.setValues(3, 2, [10000])   # q 초기값: 100.0 * 100
     store.setValues(3, 3, [1000])    # Caf 초기값: 1.0 * 1000
     store.setValues(3, 4, [30000])   # Tc 초기값: 300.0 * 100
     
+    # Input Registers 초기값 (추가!)
+    store.setValues(4, 0, [31000])   # T 초기값: 310.0 * 100
+    store.setValues(4, 1, [900])     # Ca 초기값: 0.9 * 1000
+    store.setValues(4, 2, [10000])   # q 초기값: 100.0 * 100
+    store.setValues(4, 3, [1000])    # Caf 초기값: 1.0 * 1000
+    store.setValues(4, 4, [30000])   # Tc 초기값: 300.0 * 100
+    
     # 서버 정보
     identity = ModbusDeviceIdentification()
     identity.VendorName = 'CSTR Simulator'
     identity.ProductCode = 'CSTR-SIM'
-    identity.VendorUrl = 'http://github.com/cstr-project'
+    identity.VendorUrl = 'http://github.com/cstr_project'
     identity.ProductName = 'CSTR Process Simulator'
     identity.ModelName = 'CSTR Simulator v1.0'
     identity.MajorMinorRevision = '1.0.0'
@@ -196,6 +205,7 @@ def init_modbus_server():
 # ==============================================================================
 if __name__ == '__main__':
     logger.info("Starting CSTR Simulator with Modbus Server...")
+    logger.info("지원하는 레지스터: Holding Registers (3x) & Input Registers (4x)")
     
     # Modbus 서버 초기화
     context, identity = init_modbus_server()
