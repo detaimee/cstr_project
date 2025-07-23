@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  simulator:
+    build: ./simulator
+    container_name: cstr-simulator
+    ports:
+      - "5020:5020"
+    networks:
+      - cstr-network
+    restart: unless-stopped
+
+  plc:
+    build: ./plc
+    container_name: cstr-plc
+    ports:
+      - "8080:8080"  # OpenPLC Web Interface
+      - "502:502"    # Modbus TCP
+    networks:
+      - cstr-network
+    depends_on:
+      - simulator
+    restart: unless-stopped
+
+networks:
+  cstr-network:
+    driver: bridge
