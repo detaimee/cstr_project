@@ -22,6 +22,22 @@ services:
       - simulator
     restart: unless-stopped
 
+  hmi:
+    build: ./hmi
+    container_name: cstr-hmi
+    ports:
+      - "1881:1881"  # FUXA Web Interface
+    networks:
+      - cstr-network
+    depends_on:
+      - plc
+    restart: unless-stopped
+    volumes:
+      - hmi-data:/usr/src/app/FUXA/server/_appdata
+
+volumes:
+  hmi-data:
+
 networks:
   cstr-network:
     driver: bridge

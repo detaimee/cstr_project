@@ -1,7 +1,7 @@
 PROGRAM cstr_control
   VAR
-    T_reactor AT %IW0 : INT;
-    Ca_reactor AT %IW1 : INT;
+    T_reactor AT %IW100 : INT;
+    Ca_reactor AT %IW101 : INT;
     q_setpoint AT %QW2 : INT;
     Caf_setpoint AT %QW3 : INT;
     Tc_setpoint AT %QW4 : INT;
@@ -26,7 +26,7 @@ END_PROGRAM
 CONFIGURATION Config0
 
   RESOURCE Res0 ON PLC
-    TASK task0(INTERVAL := T#100ms,PRIORITY := 0);
+    TASK task0(INTERVAL := T#20ms,PRIORITY := 0);
     PROGRAM instance0 WITH task0 : cstr_control;
   END_RESOURCE
 END_CONFIGURATION
