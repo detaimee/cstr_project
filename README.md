@@ -1,3 +1,3 @@
 - git clone https://github.com/detaimee/cstr_project.git
-- cd cstr-project
+- cd cstr_project
 - docker-compose up -d
