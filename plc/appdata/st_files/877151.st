@@ -8,6 +8,10 @@ PROGRAM cstr_control
     T_high_alarm AT %QX0.0 : BOOL := FALSE;
     manual_mode AT %IX0.0 : BOOL := TRUE;
   END_VAR
+  VAR
+    relay1 AT %QX0.0 : BOOL := FALSE;
+    relay2 AT %QX0.1 : BOOL := TRUE;
+  END_VAR
 
   q_setpoint := 10000;
   Caf_setpoint := 1000;
