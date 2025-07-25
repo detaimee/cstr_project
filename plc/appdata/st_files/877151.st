@@ -9,8 +9,8 @@ PROGRAM cstr_control
     manual_mode AT %IX0.0 : BOOL := TRUE;
   END_VAR
   VAR
-    relay1 AT %QX0.0 : BOOL := FALSE;
-    relay2 AT %QX0.1 : BOOL := TRUE;
+    relay1 AT %QX0.1 : BOOL := FALSE;
+    relay2 AT %QX0.2 : BOOL := TRUE;
   END_VAR
 
   q_setpoint := 10000;
